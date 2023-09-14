@@ -1,0 +1,44 @@
+diff -u -r qemu-8.0.0/hw/arm/Kconfig /tmp/qemu-8.0.0/hw/arm/Kconfig
+--- qemu-8.0.0/hw/arm/Kconfig	2023-04-19 18:31:47.000000000 +0200
++++ qemu-8.0.0/hw/arm/Kconfig	2023-06-14 12:18:07.277271503 +0200
+@@ -1,3 +1,7 @@
++config FPGA
++    bool
++    select RTL_BRIDGE
++
+ config ARM_VIRT
+     bool
+     imply PCI_DEVICES
+diff -u -r qemu-8.0.0/hw/arm/meson.build /tmp/qemu-8.0.0/hw/arm/meson.build
+--- qemu-8.0.0/hw/arm/meson.build	2023-04-19 18:31:47.000000000 +0200
++++ qemu-8.0.0/hw/arm/meson.build	2023-06-13 16:46:38.316347004 +0200
+@@ -29,6 +29,7 @@
+ arm_ss.add(when: 'CONFIG_ZYNQ', if_true: files('xilinx_zynq.c'))
+ arm_ss.add(when: 'CONFIG_SABRELITE', if_true: files('sabrelite.c'))
+ 
++arm_ss.add(when: 'CONFIG_FPGA', if_true: files('fpga.c'))
+ arm_ss.add(when: 'CONFIG_ARM_V7M', if_true: files('armv7m.c'))
+ arm_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4210.c'))
+ arm_ss.add(when: 'CONFIG_PXA2XX', if_true: files('pxa2xx.c', 'pxa2xx_gpio.c', 'pxa2xx_pic.c'))
+diff -u -r qemu-8.0.0/hw/Kconfig /tmp/qemu-8.0.0/hw/Kconfig
+--- qemu-8.0.0/hw/Kconfig	2023-04-19 18:31:47.000000000 +0200
++++ qemu-8.0.0/hw/Kconfig	2023-06-12 19:18:12.649167718 +0200
+@@ -31,6 +31,7 @@
+ source rdma/Kconfig
+ source remote/Kconfig
+ source rtc/Kconfig
++source rtl/Kconfig
+ source scsi/Kconfig
+ source sd/Kconfig
+ source sensor/Kconfig
+diff -u -r qemu-8.0.0/hw/meson.build /tmp/qemu-8.0.0/hw/meson.build
+--- qemu-8.0.0/hw/meson.build	2023-04-19 18:31:47.000000000 +0200
++++ qemu-8.0.0/hw/meson.build	2023-06-12 19:18:00.209160587 +0200
+@@ -30,6 +30,7 @@
+ subdir('pcmcia')
+ subdir('rdma')
+ subdir('rtc')
++subdir('rtl')
+ subdir('scsi')
+ subdir('sd')
+ subdir('sensor')

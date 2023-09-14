@@ -1,0 +1,114 @@
+#!/bin/bash
+# Copyright © 2023 Giorgio Biagetti <g.biagetti@staff.univpm.it>
+#	Department of Information Engineering
+#	Università Politecnica delle Marche (ITALY)
+# SPDX-License-Identifier: CC0-1.0
+
+DIR="/tmp/test"  # this dir will be overwritten!
+SHR="/tmp/pkgs"  # this may be overridden by LOCALREPO
+
+URL="https://download.qemu.org/"
+VER="8.0.0"
+PKG="qemu-$VER.tar.xz"
+
+# Local repository (cache) of downloaded packages:
+SHR="${LOCALREPO:-$SHR}"
+
+# "me" should be "compile", "make", or "clean"..
+me=${BASH_SOURCE[0]##*/}
+md=$(dirname "${BASH_SOURCE[0]}")
+
+if [ "$me" = "compile" ]; then
+	rm    -rf "$DIR"/qemu-build
+	mkdir  -p "$DIR"/qemu-build
+	rm    -rf "$DIR"/QEMU
+	mkdir  -p "$DIR"/QEMU/bin
+	mkdir  -p "$SHR"
+	if [ ! -f "$SHR"/"$PKG" ]      ; then
+	wget   -P "$SHR" "$URL"/"$PKG" ; fi
+	tar   xJf "$SHR"/"$PKG" -C "$DIR"
+	patch  -d "$DIR" -p0 < "$md"/makes.patch
+	patch  -d "$DIR" -p0 < "$md"/chardev.patch
+elif [ "$me" = "clean" ]; then
+	rm    -rf "$DIR"/qemu-build
+	rm    -rf "$DIR"/qemu-"$VER"
+	exit
+fi
+
+rsync -a "$md"/files/ "$DIR"/qemu-"$VER"
+
+pushd "$DIR"/qemu-build
+[ "$me" = "compile" ] && \
+../qemu-"$VER"/configure \
+	--prefix="$DIR"/QEMU \
+	--target-list=arm-softmmu  \
+	--without-default-features \
+	--without-default-devices  \
+	--with-devices-arm=custom
+make -j 24
+# minimal install: (make install would work too...)
+cp -a qemu-system-arm ../QEMU/bin
+popd
+
+[ "$me" = "compile" ] && \
+cat > "$DIR"/run << EOT
+#!/bin/bash
+# Copyright © 2023 Giorgio Biagetti <g.biagetti@staff.univpm.it>
+#	Department of Information Engineering
+#	Università Politecnica delle Marche (ITALY)
+# SPDX-License-Identifier: CC0-1.0
+
+# Sample script to invoke QEMU with the necessary options for co-simulation.
+# Possibly useful options (passed to QEMU):
+#	-S            : do not start CPU right away - useful for debugging with GDB
+#	-no-shutdown  : do not exit QEMU at end of simulation - useful to inspect results
+
+DIR="$DIR"   # working directory
+FWI="code.elf"    # default firmware image
+HDL="vhdl.run"    # default VHDL executable
+IPC="fifo"        # base name of the pipes to create
+
+# pass all "-" options to QEMU and "--" options to GHDL:
+declare -a opts_qemu
+declare -a opts_ghdl
+while [ "\${1::1}" = "-" ]; do
+	if [ "\$1" = "--" ]; then
+		shift
+		break
+	elif [ "\${1::2}" = "--" ]; then
+		opts_ghdl+=( "\$1" )
+	else
+		opts_qemu+=( "\$1" )
+	fi
+	shift
+done
+
+# but use the 1st non-option argument (if present) as firmware image:
+ELF="\${1:-\$DIR/\$FWI}"
+# and use the 2nd non-option argument (if present) as VHDL executable:
+RUN="\${2:-\$DIR/\$HDL}"
+
+# create named pipes if they do not already exist:
+for x in "in" "out"; do
+	[ -p "\$DIR"/"\$IPC".\$x ] || mkfifo "\$DIR"/"\$IPC".\$x
+done
+
+# start QEMU with appropriate options:
+"\$DIR"/QEMU/bin/qemu-system-arm "\${opts_qemu[@]}" \\
+        -monitor telnet::1235,server=on,wait=off \\
+	-gdb tcp::1234 \\
+	-machine fpga -m 256 \\
+	-icount shift=3,sleep=on \\
+	-chardev pipe,id=rtllink,path="\$DIR"/"\$IPC" \\
+	-device RTL-bridge,chardev=rtllink,base=0xE0000000 \\
+	-device loader,file="\$ELF" &
+
+# alternative option for socket-based communication (avoids patching QEMU):
+#	-chardev socket,id=rtllink,server=on,path="\$DIR"/sock \\
+# but it needs a separate program like "socat" to convert sockets to pipes:
+#	socat "\$DIR"/sock stdio > "\$DIR"/"\$IPC".out < "\$DIR"/"\$IPC".in
+
+# start VHDL simulation if executable already exists:
+[ -x "\$RUN" ] && "\$RUN" "\${opts_ghdl[@]}"
+EOT
+chmod +x "$DIR"/run

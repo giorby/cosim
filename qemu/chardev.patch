@@ -1,0 +1,28 @@
+diff -u -r qemu-8.0.0/chardev/char-pipe.c /tmp/qemu-8.0.0/chardev/char-pipe.c
+--- qemu-8.0.0/chardev/char-pipe.c	2023-04-19 18:31:47.000000000 +0200
++++ qemu-8.0.0/chardev/char-pipe.c	2023-07-12 10:50:30.138743547 +0200
+@@ -171,12 +171,24 @@
+     dev->device = g_strdup(device);
+ }
+ 
++static int qemu_chr_sync_read_pipe(Chardev *chr, const uint8_t *buf, int len)
++{
++    FDChardev *cc = FD_CHARDEV(chr);
++    struct iovec iov = { .iov_base = (void *) buf, .iov_len = len };
++
++    qio_channel_set_blocking(cc->ioc_in, true, NULL);
++    int ret = qio_channel_readv_full(cc->ioc_in, &iov, 1, NULL, NULL, 0, NULL);
++    qio_channel_set_blocking(cc->ioc_in, false, NULL);
++    return ret;
++}
++
+ static void char_pipe_class_init(ObjectClass *oc, void *data)
+ {
+     ChardevClass *cc = CHARDEV_CLASS(oc);
+ 
+     cc->parse = qemu_chr_parse_pipe;
+     cc->open = qemu_chr_open_pipe;
++    cc->chr_sync_read = qemu_chr_sync_read_pipe;
+ }
+ 
+ static const TypeInfo char_pipe_type_info = {

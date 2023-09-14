@@ -1,0 +1,116 @@
+#!/bin/bash
+# Copyright © 2023 Giorgio Biagetti <g.biagetti@staff.univpm.it>
+#	Department of Information Engineering
+#	Università Politecnica delle Marche (ITALY)
+# SPDX-License-Identifier: CC0-1.0
+
+DIR="/tmp/test"  # this dir will be overwritten!
+SHR="/tmp/pkgs"  # this may be overridden by LOCALREPO
+
+# Local repository (cache) of downloaded packages:
+SHR="${LOCALREPO:-$SHR}"
+GET="--content-disposition --no-clobber"
+URL="https://codeload.github.com/"
+
+# "me" should be "compile", "make", or "clean"..
+me=${BASH_SOURCE[0]##*/}
+md=$(dirname "${BASH_SOURCE[0]}")
+
+# process GHDL:
+
+PRG="ghdl"
+VER="3.0.0"
+URI="$URL/$PRG/$PRG/tar.gz/v$VER"
+PKG="$PRG-$VER.tar.gz"
+
+if [ "$me" = "compile" ]; then
+	rm    -rf "$DIR"/ghdl-build
+	mkdir  -p "$DIR"/ghdl-build
+	rm    -rf "$DIR"/GHDL
+	mkdir  -p "$SHR"
+	if [ ! -f "$SHR"/"$PKG" ]      ; then
+	wget   -P "$SHR"  $GET "$URI"  ; fi
+	tar   xzf "$SHR"/"$PKG" -C "$DIR"
+elif [ "$me" = "clean" ]; then
+	rm    -rf "$DIR"/ghdl-build
+	rm    -rf "$DIR"/ghdl-"$VER"
+	exit
+fi
+
+if [ "$me" = "compile" ]; then
+	pushd "$DIR"/ghdl-build
+	CFLAGS=-O2 \
+	CXXFLAGS=-O2 \
+	ADA_FLAGS=-O2 \
+	../ghdl-"$VER"/configure \
+	--prefix="$DIR"/GHDL \
+	--disable-checks \
+	--with-llvm-config
+	make GNATMAKE="gnatmake -j16"
+	make install
+	popd
+fi
+
+# process UVVM:
+
+PRG="UVVM"
+VER="2023.03.21"
+URI="$URL/$PRG/$PRG/tar.gz/v$VER"
+PKG="$PRG-$VER.tar.gz"
+
+BIN="$DIR/GHDL/bin/ghdl"
+LIB="$DIR/GHDL/lib/ghdl"
+
+if [ "$me" = "compile" ]; then
+	rm    -rf "$LIB"/src/UVVM-"$VER"
+	if [ ! -f "$SHR"/"$PKG" ]      ; then
+	wget   -P "$SHR"  $GET "$URI"  ; fi
+	tar   xzf "$SHR"/"$PKG" -C "$LIB"/src
+	patch  -d "$LIB"/src -p0 < "$md"/uvvm.patch
+	"$LIB"/vendors/compile-uvvm.sh \
+	--ghdl   "$BIN" \
+	--output "$LIB" \
+	--source "$LIB"/src/UVVM-"$VER" \
+	--all
+fi
+
+# process proprietary Xilinx Vivado simulation libraries if installed:
+
+VER="2023.1"
+OPT="/opt/xilinx/Vivado"
+
+SRC="$OPT/$VER/data/vhdl/src"
+
+if [ "$me" = "compile" ]; then
+	[ -d "$SRC" ] && "$LIB"/vendors/compile-xilinx-vivado.sh \
+	--ghdl   "$BIN" \
+	--output "$LIB" \
+	--source "$SRC" \
+	--vhdl2008 --all
+fi
+
+# finally compile the co-simulation modules:
+
+PRG="cosim"
+TMP="$DIR"/build-"$PRG"
+GRT="$LIB"/grt.lst
+
+rm   -rf "$LIB"/src/"$PRG"
+mkdir -p "$LIB"/src/"$PRG"
+rm   -rf "$LIB"/"$PRG"/v08
+mkdir -p "$LIB"/"$PRG"/v08
+rm   -rf "$TMP"
+mkdir -p "$TMP"
+for module in CPUemu PTYemu; do
+	cp -a "$md"/files/$module.vhdl "$LIB"/src/"$PRG"
+	"$BIN" -a -O2 --std=08 -frelaxed --work="$PRG" --workdir="$LIB"/"$PRG"/v08 "$LIB"/src/"$PRG"/$module.vhdl
+done
+for module in PTYemu; do
+	gcc -c -O2 -o "$TMP"/$module.o "$md"/files/$module.c
+	ar r "$LIB"/lib"$PRG".a "$TMP"/$module.o
+done
+for option in -L@ -lcosim; do
+	grep -q "^$option\$" "$GRT" || echo "$option" >> "$GRT"
+done
+rm   -rf "$TMP"
+

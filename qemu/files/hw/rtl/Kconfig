@@ -1,0 +1,2 @@
+config RTL_BRIDGE
+    bool

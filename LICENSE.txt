@@ -1,0 +1,14 @@
+This package contains several components which are all open-source
+but has been released under different licenses to help better integrate
+them with the existing ecosystem. You can find the whole text of each
+used license in the "licenses" directory, and each source file contains
+an SPDX identifier that specifies the license that applies to it,
+and acts as a placeholder for the full referenced license file.
+
+As a general guideline, this is the rationale:
+ - the C    code of the co-simulation modules is "GPL-2.0-or-later"
+ - the VHDL code of the co-simulation modules is "Apache-2.0"
+ - the compilation and convenience scripts are   "CC0-1.0"
+the examples have their own individual licenses:
+ - the firmware (mainly C    code) is "BSD-3-Clause"
+ - the hardware (mainly VHDL code) is "CERN-OHL-W-2.0"
